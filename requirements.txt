@@ -16,5 +16,6 @@ email-validator
 pypdf
 openai
 cachetools
+requests
 google-auth
 pinecone
