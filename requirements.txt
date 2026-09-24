@@ -9,7 +9,7 @@ passlib[bcrypt]
 python-multipart
 celery
 redis
-chromadb
+
 sentence-transformers
 python-dotenv
 email-validator
