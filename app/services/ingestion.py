@@ -2,9 +2,10 @@
 import uuid
 from sqlalchemy.orm import Session
 
-from app.db.chroma_client import collection
+from app.db.pinecone_client import index
 from app.services.embedding import embed_texts
 from app.models.document import Document
+
 
 def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> list[str]:
     chunks = []
@@ -14,6 +15,7 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> list[str
         chunks.append(text[start:end])
         start += chunk_size - overlap
     return chunks
+
 
 def ingest_document(
     db: Session,
@@ -40,24 +42,24 @@ def ingest_document(
         chunks = chunk_text(text)
         embeddings = embed_texts(chunks)
         ids = [str(uuid.uuid4()) for _ in chunks]
-        metadatas = [
-            {
+
+        # Pinecone stores metadata alongside each vector — since Pinecone doesn't
+        # keep raw text separately like ChromaDB did, chunk_text must be included
+        # inside metadata so retrieval can get it back.
+        vectors = []
+        for i in range(len(chunks)):
+            metadata = {
                 "document_id": doc.id,
                 "title": title,
                 "regime": regime,
                 "language": language,
                 "doc_type": doc_type,
                 "source_url": source_url or "",
+                "chunk_text": chunks[i],
             }
-            for _ in chunks
-        ]
+            vectors.append((ids[i], embeddings[i], metadata))
 
-        collection.add(
-            ids=ids,
-            embeddings=embeddings,
-            documents=chunks,
-            metadatas=metadatas,
-        )
+        index.upsert(vectors=vectors)
 
         doc.status = "done"
         doc.chunk_count = len(chunks)

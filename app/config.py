@@ -9,10 +9,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     REDIS_URL: str
     SECRET_KEY: str
-    CHROMA_PERSIST_DIR: str
     EMBEDDING_MODEL_NAME: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     OPENROUTER_API_KEY: str
-    GENERATION_MODEL_NAME: str = "nvidia/nemotron-3.5-lightning:free"
+    GENERATION_MODEL_NAME: str = "nvidia/nemotron-3.5-content-safety:free"
+    GOOGLE_CLIENT_ID: str
+    PINECONE_API_KEY: str
+    PINECONE_INDEX_NAME: str = "ipsakti-documents"
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
@@ -28,5 +30,6 @@ if __name__ == "__main__":
     print("DATABASE:", settings.DATABASE_URL)
     print("REDIS:", settings.REDIS_URL)
     print("CHROMA:", settings.CHROMA_PERSIST_DIR)
-    print("MODEL:", settings.embedding_model_name)
+    print("MODEL:", settings.EMBEDDING_MODEL_NAME)
+
 
