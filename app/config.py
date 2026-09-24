@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL_NAME: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     OPENROUTER_API_KEY: str
     GENERATION_MODEL_NAME: str = "nvidia/nemotron-3.5-content-safety:free"
-    GOOGLE_CLIENT_ID: str
+    
     PINECONE_API_KEY: str
     PINECONE_INDEX_NAME: str = "ipsakti-documents"
 
