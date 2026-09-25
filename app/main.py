@@ -20,7 +20,7 @@ except Exception as e:
 app = FastAPI(title="IP-SAKTI Sahayak API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://ip-sakti-s837.onrender.com/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
