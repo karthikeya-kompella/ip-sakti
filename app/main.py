@@ -1,5 +1,6 @@
 from app import models  # ensures all models are registered with SQLAlchemy
-
+from app.config import settings
+print(f"ACTUAL EMBEDDING MODEL LOADED: {settings.EMBEDDING_MODEL_NAME}")
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import auth, regimes, documents, query
