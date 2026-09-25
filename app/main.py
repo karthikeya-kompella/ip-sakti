@@ -1,5 +1,3 @@
-
-# app/main.py
 from app import models  # ensures all models are registered with SQLAlchemy
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,4 +32,3 @@ app.include_router(query.router)
 @app.get("/")
 def root():
     return {"status": "IP-SAKTI Sahayak API is running"}
->>>>>>> dc7b48e (initialize database tables)
