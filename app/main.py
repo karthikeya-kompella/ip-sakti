@@ -4,7 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import auth, regimes, documents, query
+from app.db.database import Base, engine
+from app.models import user, conversation, message, document  # ensures all models register
 
+Base.metadata.create_all(bind=engine)
 app = FastAPI(title="IP-SAKTI Sahayak API")
 
 app.add_middleware(
@@ -23,4 +26,4 @@ app.include_router(query.router)
 
 @app.get("/")
 def root():
-    return {"status": "IP-SAKTI Sahayak API is running"}
+    return {"status": "IP-SAKTI Sahayak API is running"}
