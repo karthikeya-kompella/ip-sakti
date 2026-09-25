@@ -1,4 +1,3 @@
-# app/services/embedding.py
 import requests
 from app.config import settings
 
@@ -10,28 +9,34 @@ HEADERS = {
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Get embeddings via HuggingFace's hosted Inference API instead of loading
-    the model locally — removes the memory load that was crashing Render's
-    512MB instance."""
-    response = requests.post(
-        HF_API_URL,
-        headers=HEADERS,
-        json={"inputs": texts, "options": {"wait_for_model": True}},
-        timeout=60,
-    )
+    """Get embeddings via HuggingFace's hosted Inference API. Processes in
+    small batches with a generous timeout, since large models can take a
+    while to cold-start on HF's side."""
+    all_embeddings = []
+    batch_size = 5  # smaller batches reduce risk of a single slow/failed call
 
-    if response.status_code != 200:
-        raise RuntimeError(f"HF Inference API error {response.status_code}: {response.text}")
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
 
-    embeddings = response.json()
+        response = requests.post(
+            HF_API_URL,
+            headers=HEADERS,
+            json={"inputs": batch, "options": {"wait_for_model": True}},
+            timeout=120,  # bge-m3 can be slow to cold-start on HF's side
+        )
 
-    if isinstance(embeddings[0][0], list):
-        import statistics
-        pooled = []
-        for vec_group in embeddings:
-            dim = len(vec_group[0])
-            pooled_vec = [statistics.mean(token[d] for token in vec_group) for d in range(dim)]
-            pooled.append(pooled_vec)
-        return pooled
+        if response.status_code != 200:
+            raise RuntimeError(f"HF Inference API error {response.status_code}: {response.text}")
 
-    return embeddings
+        embeddings = response.json()
+
+        if isinstance(embeddings[0][0], list):
+            import statistics
+            for vec_group in embeddings:
+                dim = len(vec_group[0])
+                pooled_vec = [statistics.mean(token[d] for token in vec_group) for d in range(dim)]
+                all_embeddings.append(pooled_vec)
+        else:
+            all_embeddings.extend(embeddings)
+
+    return all_embeddings
