@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     EMBEDDING_MODEL_NAME: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     OPENROUTER_API_KEY: str
+    HF_TOKEN: str
     GENERATION_MODEL_NAME: str = "nvidia/nemotron-3.5-content-safety:free"
     GOOGLE_CLIENT_ID: str | None = None
     PINECONE_API_KEY: str
