@@ -1,7 +1,8 @@
+# app/services/embedding.py
 import requests
 from app.config import settings
 
-HF_API_URL = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{settings.EMBEDDING_MODEL_NAME}"
+HF_API_URL = f"https://router.huggingface.co/hf-inference/models/{settings.EMBEDDING_MODEL_NAME}/pipeline/feature-extraction"
 
 HEADERS = {
     "Authorization": f"Bearer {settings.HF_TOKEN}",
@@ -24,10 +25,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
     embeddings = response.json()
 
-    # The API can return either a single flat vector per text, or a nested
-    # token-level structure depending on the model — normalize to one vector per input.
     if isinstance(embeddings[0][0], list):
-        # Nested (token-level) output — mean-pool across tokens
         import statistics
         pooled = []
         for vec_group in embeddings:
