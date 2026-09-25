@@ -20,7 +20,10 @@ except Exception as e:
 app = FastAPI(title="IP-SAKTI Sahayak API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://ip-sakti-frontend-i4crlu3m8-karthikeya19.vercel.app"],
+    allow_origins=[
+    "https://ip-sakti-frontend-i4crlu3m8-karthikeya19.vercel.app",
+    "http://localhost:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
