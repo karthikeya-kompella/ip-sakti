@@ -43,9 +43,6 @@ def ingest_document(
         embeddings = embed_texts(chunks)
         ids = [str(uuid.uuid4()) for _ in chunks]
 
-        # Pinecone stores metadata alongside each vector — since Pinecone doesn't
-        # keep raw text separately like ChromaDB did, chunk_text must be included
-        # inside metadata so retrieval can get it back.
         vectors = []
         for i in range(len(chunks)):
             metadata = {
@@ -59,7 +56,12 @@ def ingest_document(
             }
             vectors.append((ids[i], embeddings[i], metadata))
 
-        index.upsert(vectors=vectors)
+        # Pinecone caps request size at 2MB — upsert in small batches to
+        # stay safely under that limit regardless of document size.
+        batch_size = 50
+        for i in range(0, len(vectors), batch_size):
+            batch = vectors[i:i + batch_size]
+            index.upsert(vectors=batch)
 
         doc.status = "done"
         doc.chunk_count = len(chunks)
