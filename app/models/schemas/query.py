@@ -8,7 +8,11 @@ class QueryRequest(BaseModel):
     top_k: int = 5
     response_language: str | None = None  # None = auto-detect from question
 
-
+class Confidence(BaseModel):
+    level: str
+    score: float
+    note: str
+    
 class Citation(BaseModel):
     chunk_text: str
     title: str | None = None
@@ -23,6 +27,7 @@ class QueryResponse(BaseModel):
     answer: str
     regime: str
     citations: list[Citation]
+    confidence: Confidence
 
 
 class CompareQueryRequest(BaseModel):
@@ -40,4 +45,4 @@ class RegimeAnswer(BaseModel):
 
 class CompareQueryResponse(BaseModel):
     per_regime_answers: list[RegimeAnswer]
-    synthesis: str
+    synthesis: str
