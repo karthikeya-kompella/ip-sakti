@@ -10,9 +10,20 @@ from app.models.schemas.query import (
     CompareQueryResponse,
 )
 
-from app.services.retrieval import retrieve_chunks
-from app.services.generation import generate_answer, generate_synthesis
-from app.services.cache import query_cache, make_cache_key
+from app.services.retrieval import (
+    retrieve_chunks,
+    compute_confidence,
+)
+
+from app.services.generation import (
+    generate_answer,
+    generate_synthesis,
+)
+
+from app.services.cache import (
+    query_cache,
+    make_cache_key,
+)
 
 
 router = APIRouter(
@@ -84,6 +95,22 @@ def query(
     print("\nRETRIEVED CHUNKS:", len(chunks))
 
     # --------------------------------------------------------
+    # CONFIDENCE CALCULATION
+    # --------------------------------------------------------
+
+    try:
+
+        confidence = compute_confidence(chunks)
+
+    except Exception as e:
+
+        print("❌ CONFIDENCE ERROR:", repr(e))
+
+        confidence = 0.0
+
+    print("CONFIDENCE:", confidence)
+
+    # --------------------------------------------------------
     # DEBUG RETRIEVED CHUNKS
     # --------------------------------------------------------
 
@@ -131,6 +158,7 @@ def query(
             answer=answer,
             regime=request.regime,
             citations=[],
+            confidence=confidence,
         )
 
         return result
@@ -167,6 +195,7 @@ def query(
         answer=answer,
         regime=request.regime,
         citations=chunks,
+        confidence=confidence,
     )
 
     # --------------------------------------------------------
@@ -229,6 +258,27 @@ def compare_query(
 
         print(
             f"Retrieved {len(chunks)} chunks for {regime}"
+        )
+
+        # ----------------------------------------------------
+        # CONFIDENCE
+        # ----------------------------------------------------
+
+        try:
+
+            confidence = compute_confidence(chunks)
+
+        except Exception as e:
+
+            print(
+                f"❌ CONFIDENCE ERROR for {regime}:",
+                repr(e)
+            )
+
+            confidence = 0.0
+
+        print(
+            f"Confidence for {regime}: {confidence}"
         )
 
         # ----------------------------------------------------
@@ -305,6 +355,7 @@ def compare_query(
                 "regime": regime,
                 "answer": answer,
                 "citations": chunks,
+                "confidence": confidence,
             }
         )
 
