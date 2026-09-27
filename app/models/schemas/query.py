@@ -22,13 +22,13 @@ class Citation(BaseModel):
     source_url: str | None = None
     distance: float | None = None
 
-
 class QueryResponse(BaseModel):
-    answer: str
-    regime: str
-    citations: list[Citation]
-    confidence: Confidence
-
+    answer: str | None = None
+    regime: str | None = None
+    citations: list[Citation] = []
+    confidence: Confidence | None = None
+    needs_clarification: bool = False
+    clarifying_questions: list[str] = []
 
 class CompareQueryRequest(BaseModel):
     question: str
