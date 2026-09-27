@@ -9,6 +9,11 @@ FORMULATION_CATEGORIES = """
 - Cosmetic: topical product with no therapeutic claim.
 """
 
+TKDL_INFO = {
+    "url": "https://www.tkdl.res.in",
+    "note": "Classical Ayurvedic formulations are documented in the Traditional Knowledge Digital Library (TKDL), used by patent offices worldwide as prior art to prevent misappropriation. TKDL is not publicly searchable, but its existence is grounds to challenge patents based on known classical formulations.",
+}
+
 def classify_formulation(description: str, regime: str) -> dict:
     prompt = f"""You are classifying an Ayurvedic product description into one of the following categories, for IP and regulatory purposes:
 
