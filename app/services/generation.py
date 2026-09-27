@@ -1,3 +1,5 @@
+# app/services/generation.py
+import re
 from openai import OpenAI
 from app.config import settings
 
@@ -12,57 +14,15 @@ LANGUAGE_NAMES = {
     "te": "Telugu",
     "zh": "Chinese",
 }
-import re
 
-def _contains_script(text: str, language_code: str) -> bool:
-    """Check whether text actually contains characters from the target script."""
-    script_ranges = {
-        "te": r'[\u0C00-\u0C7F]',   # Telugu unicode block
-        "hi": r'[\u0900-\u097F]',   # Devanagari (Hindi) unicode block
-        "zh": r'[\u4E00-\u9FFF]',   # CJK unicode block
-    }
-    pattern = script_ranges.get(language_code)
-    if not pattern:
-        return True  # no script check defined (e.g. English) — assume fine
-    return bool(re.search(pattern, text))
+SCRIPT_RANGES = {
+    "te": r'[\u0C00-\u0C7F]',
+    "hi": r'[\u0900-\u097F]',
+    "zh": r'[\u4E00-\u9FFF]',
+}
 
 
-def _translate_text(text: str, target_language_name: str, target_language_code: str) -> str:
-    prompt = f"""Translate the following text into {target_language_name}.
-You MUST write the ENTIRE output in {target_language_name} script — do not use English or Latin script.
-Preserve all facts, section numbers, and legal/regulatory terms exactly.
-Output ONLY the translated text, nothing else.
-
-Text to translate:
-{text}"""
-
-    try:
-        translated = _call_llm(prompt, max_tokens=1500)
-        translated = _extract_final_answer(translated)
-
-        if translated and _contains_script(translated, target_language_code):
-            return translated
-
-        # First attempt failed the script check — retry once, more forcefully
-        print(f"Translation to {target_language_name} did not produce {target_language_name} script, retrying...")
-        retry_prompt = f"""Translate this into {target_language_name} language, using {target_language_name} script ONLY.
-This is critical: your entire response must be written in {target_language_name} characters, not English.
-
-{text}"""
-        retry = _call_llm(retry_prompt, max_tokens=1500)
-        retry = _extract_final_answer(retry)
-
-        if retry and _contains_script(retry, target_language_code):
-            return retry
-
-        # Still failed — be honest about it rather than silently returning English
-        return f"(Translation to {target_language_name} was not available — showing English answer instead)\n\n{text}"
-
-    except Exception as e:
-        print(f"Translation error: {repr(e)}")
-        return text
-
-def _call_llm(prompt: str, max_tokens: int = 1200) -> str:
+def _call_llm(prompt: str, max_tokens: int = 1500) -> str:
     print(f"Calling LLM ({settings.GENERATION_MODEL_NAME})...")
     response = client.chat.completions.create(
         model=settings.GENERATION_MODEL_NAME,
@@ -99,22 +59,13 @@ def _extract_final_answer(text: str) -> str:
     return text.strip()
 
 
-def _translate_text(text: str, target_language_name: str, target_language_code: str) -> str:
-    """Dedicated translation pass, separate from RAG generation."""
-    prompt = f"""Translate the following text into {target_language_name}.
-Preserve all facts, section numbers, and legal/regulatory terms exactly.
-Output ONLY the translated text. No preamble, no explanation.
-
-Text to translate:
-{text}"""
-
-    try:
-        translated = _call_llm(prompt, max_tokens=1500)
-        translated = _extract_final_answer(translated)
-        return translated if translated else text
-    except Exception as e:
-        print(f"Translation error: {repr(e)}")
-        return text
+def _has_foreign_script_leak(text: str, target_code: str) -> bool:
+    """Check if the answer contains script from a DIFFERENT language than
+    the one requested — this is the actual language-mixing bug."""
+    for code, pattern in SCRIPT_RANGES.items():
+        if code != target_code and re.search(pattern, text):
+            return True
+    return False
 
 
 def generate_answer(
@@ -123,134 +74,76 @@ def generate_answer(
     response_language: str | None = None,
 ) -> str:
 
-    # Determine the requested response language
-    lang_name = (
-        LANGUAGE_NAMES.get(response_language)
-        if response_language
-        else "the same language as the user's question"
-    )
+    lang_code = response_language if response_language in LANGUAGE_NAMES else "en"
+    lang_name = LANGUAGE_NAMES[lang_code]
 
     if not chunks:
-        base_message = (
-            "The available documents do not contain enough information "
-            "to answer this question."
-        )
-
-        if response_language and lang_name != "English":
-            return _translate_text(base_message, lang_name)
-
-        return base_message
-
-    # ---------------------------------------------------------
-    # BUILD RETRIEVED CONTEXT
-    # ---------------------------------------------------------
+        return f"The available documents do not contain enough information to answer this question. (Requested language: {lang_name})"
 
     context_parts = []
-
     for i, c in enumerate(chunks, start=1):
         title = c.get("title", "Unknown source")
         chunk_text = c.get("chunk_text", "")
-
-        context_parts.append(
-            f"SOURCE {i}\n"
-            f"TITLE: {title}\n\n"
-            f"CONTENT:\n{chunk_text}\n"
-        )
+        context_parts.append(f"SOURCE {i}\nTITLE: {title}\n\nCONTENT:\n{chunk_text}\n")
 
     context = "\n".join(context_parts)
 
-    # ---------------------------------------------------------
-    # GENERATION PROMPT
-    # ---------------------------------------------------------
+    prompt = f"""You are IP-Sakti Sahayak, a jurisdiction-aware legal and regulatory assistant for Ayurveda IP and drug regulation.
 
-    prompt = f"""
-You are the final-answer generator for IP-Sakti Sahayak,
-a jurisdiction-aware legal and regulatory information assistant.
+LANGUAGE RULE — THIS IS ABSOLUTE:
+Write your ENTIRE answer in {lang_name} ONLY.
+Do NOT mix in English, Hindi, Chinese, or any other language.
+Do NOT switch languages mid-sentence or mid-paragraph.
+Proper nouns, Act names, and section numbers may stay in their original form (e.g. "Section 3(p)", "Drugs and Cosmetics Act"), but every surrounding sentence, explanation, and instruction must be written in {lang_name}.
+If you cannot write fluently in {lang_name}, still attempt it — do not fall back to English.
 
-Answer the user's question using ONLY the retrieved sources below.
-
-LANGUAGE RULES:
-
-1. Answer in the SAME LANGUAGE used by the user.
-2. The required response language is: {lang_name}
-3. Do NOT automatically answer in English.
-4. Do NOT translate the user's question into another language.
-5. Maintain the same language throughout the answer.
-6. If the user mixes languages, answer primarily in the language
-   used for the main question.
-7. Use natural and grammatically correct language.
-8. Do not unnecessarily mix English sentences into a non-English answer.
-9. Official legal and regulatory terms may remain in their original
-   form when necessary.
-
-LEGAL TERMINOLOGY RULES:
-
-- Preserve official names of laws and authorities.
-- Preserve section numbers exactly.
-- Preserve CFR references exactly.
-- Preserve article/rule numbers exactly.
-- Preserve official abbreviations such as FDA, NDA, OTC,
-  FD&C Act, etc.
-- Do not invent or modify legal references.
-
-STRICT RULES:
-
-1. Answer the user's question directly and concisely.
-2. Use ONLY information supported by the retrieved sources.
-3. Do NOT use outside knowledge.
-4. Do NOT invent legal sections, rules, dates, authorities,
-   requirements, or procedures.
-5. If the retrieved sources are insufficient, explicitly say:
-
-   "The available sources do not contain enough information
-   to answer this question."
-
-   Express this statement in the user's language.
-6. Do NOT include reasoning steps.
-7. Do NOT include meta commentary.
-8. Do NOT include labels such as "Analysis", "Reasoning",
-   or "Thought process".
-9. Distinguish clearly between jurisdictions.
-10. Do not make unsupported legal conclusions.
+CONTENT RULES:
+1. Base your answer ONLY on the retrieved sources below. Do not invent facts, sections, or authorities not present in the sources.
+2. Directly answer the user's question first, in one or two clear sentences.
+3. Then provide PRACTICAL GUIDANCE based on what the sources say — this means:
+   - What the applicable rule, section, or requirement actually says
+   - What a person/company would need to DO to comply (e.g. which approval to obtain, which form to file, which authority to approach, what formulation/manufacturing condition applies)
+   - Any conditions, exceptions, or limitations mentioned in the source text
+4. If the sources describe a process or formulation requirement, lay it out as clear, ordered steps.
+5. If the sources are insufficient to answer or to give practical guidance, say so explicitly, in {lang_name}, and do not guess.
+6. Do NOT include reasoning traces, meta-commentary, or labels like "Analysis:", "Let me think", or "Here's the answer:". Output ONLY the final answer text itself.
 
 RETRIEVED SOURCES:
-
 {context}
 
 USER QUESTION:
-
 {question}
 
-FINAL INSTRUCTION:
-
-Provide ONLY the final answer to the user's question.
-Answer in the SAME LANGUAGE as the user's question.
-"""
-
-    # ---------------------------------------------------------
-    # CALL LLM
-    # ---------------------------------------------------------
+FINAL ANSWER (entirely in {lang_name}):"""
 
     try:
-        answer = _call_llm(prompt, max_tokens=1200)
+        answer = _call_llm(prompt, max_tokens=1500)
         answer = _extract_final_answer(answer)
-
     except Exception as e:
         print(f"Generation error: {repr(e)}")
         answer = ""
 
-    # ---------------------------------------------------------
-    # FALLBACK
-    # ---------------------------------------------------------
-
     if not answer:
-        answer = (
+        return (
             f"(Model unavailable — showing top retrieved source directly.) "
-            f"[{chunks[0].get('title', 'Source')}] "
-            f"{chunks[0].get('chunk_text', '')[:500]}"
+            f"[{chunks[0].get('title','Source')}] {chunks[0].get('chunk_text','')[:500]}"
         )
 
+    if lang_code != "en" and _has_foreign_script_leak(answer, lang_code):
+        print(f"Language mixing detected for {lang_name}, retrying with stricter instruction...")
+        retry_prompt = prompt + f"\n\nIMPORTANT: Your previous attempt mixed languages. This time, write EVERY sentence in {lang_name} script only. No exceptions."
+        try:
+            retry_answer = _call_llm(retry_prompt, max_tokens=1500)
+            retry_answer = _extract_final_answer(retry_answer)
+            if retry_answer and not _has_foreign_script_leak(retry_answer, lang_code):
+                return retry_answer
+        except Exception as e:
+            print(f"Retry error: {repr(e)}")
+        return f"(A clean {lang_name}-only answer could not be generated by the current model.)\n\n{answer}"
+
     return answer
+
+
 def generate_synthesis(
     question: str,
     per_regime_answers: list[dict],
