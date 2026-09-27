@@ -25,7 +25,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+from app.routers import classify
+app.include_router(classify.router)
 app.include_router(auth.router)
 app.include_router(regimes.router)
 app.include_router(documents.router)
