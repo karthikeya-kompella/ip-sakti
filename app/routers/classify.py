@@ -11,4 +11,8 @@ router = APIRouter(prefix="/api/v1/classify", tags=["classify"])
 @router.post("", response_model=ClassifyResponse)
 def classify(request: ClassifyRequest, current_user: User = Depends(get_current_user)):
     result = classify_formulation(request.description, request.regime)
-    return ClassifyResponse(**result)
+    response = ClassifyResponse(**result)
+    if "classical" in result["formulation_type"].lower():
+        from app.services.classification import TKDL_INFO
+        response.tkdl_reference = TKDL_INFO
+    return response
