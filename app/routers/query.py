@@ -18,6 +18,7 @@ from app.services.retrieval import (
 from app.services.generation import (
     generate_answer,
     generate_synthesis,
+    check_ambiguity,
 )
 
 from app.services.cache import (
@@ -36,21 +37,104 @@ router = APIRouter(
 # SINGLE JURISDICTION QUERY
 # ============================================================
 
-@router.post("", response_model=QueryResponse)
+@router.post(
+    "",
+    response_model=QueryResponse,
+)
 def query(
     request: QueryRequest,
     current_user: User = Depends(get_current_user),
 ):
 
     print("\n================ QUERY ================")
-    print("QUESTION:", request.question)
-    print("REGIME:", request.regime)
-    print("LANGUAGE:", request.response_language)
-    print("TOP K:", request.top_k)
+
+    print(
+        "QUESTION:",
+        request.question
+    )
+
+    print(
+        "REGIME:",
+        request.regime
+    )
+
+    print(
+        "LANGUAGE:",
+        request.response_language
+    )
+
+    print(
+        "TOP K:",
+        request.top_k
+    )
+
+
+    # ========================================================
+    # AMBIGUITY CHECK
+    # ========================================================
+
+    try:
+
+        ambiguity_check = check_ambiguity(
+            request.question
+        )
+
+        print(
+            "AMBIGUITY CHECK:",
+            ambiguity_check
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ AMBIGUITY CHECK ERROR:",
+            repr(e)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Ambiguity check failed.",
+        )
+
 
     # --------------------------------------------------------
-    # TEMPORARILY DISABLE CACHE WHILE DEBUGGING
+    # QUESTION IS NOT CLEAR
     # --------------------------------------------------------
+
+    if not ambiguity_check.get(
+        "is_clear",
+        True,
+    ):
+
+        print(
+            "⚠️ QUESTION REQUIRES CLARIFICATION"
+        )
+
+        return QueryResponse(
+            answer="",
+            regime=request.regime,
+            citations=[],
+            confidence={
+                "level": "none",
+                "score": 0.0,
+                "note": "Question requires clarification.",
+            },
+            needs_clarification=True,
+            clarifying_questions=ambiguity_check.get(
+                "clarifying_questions",
+                [],
+            ),
+        )
+
+
+    print(
+        "✅ QUESTION IS CLEAR"
+    )
+
+
+    # ========================================================
+    # CACHE
+    # ========================================================
 
     USE_CACHE = False
 
@@ -62,18 +146,26 @@ def query(
 
     if USE_CACHE:
 
-        cached = query_cache.get(cache_key)
+        cached = query_cache.get(
+            cache_key
+        )
 
         if cached:
 
-            print("⚠️ RETURNING CACHED RESULT")
-            print("========================================\n")
+            print(
+                "⚠️ RETURNING CACHED RESULT"
+            )
+
+            print(
+                "========================================\n"
+            )
 
             return cached
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # RETRIEVAL
-    # --------------------------------------------------------
+    # ========================================================
 
     try:
 
@@ -85,67 +177,110 @@ def query(
 
     except Exception as e:
 
-        print("❌ RETRIEVAL ERROR:", repr(e))
+        print(
+            "❌ RETRIEVAL ERROR:",
+            repr(e)
+        )
 
         raise HTTPException(
             status_code=500,
             detail="Retrieval failed.",
         )
 
-    print("\nRETRIEVED CHUNKS:", len(chunks))
 
-    # --------------------------------------------------------
-    # CONFIDENCE CALCULATION
-    # --------------------------------------------------------
+    print(
+        "\nRETRIEVED CHUNKS:",
+        len(chunks)
+    )
+
+
+    # ========================================================
+    # CONFIDENCE
+    # ========================================================
 
     try:
 
-        confidence = compute_confidence(chunks)
+        confidence = compute_confidence(
+            chunks
+        )
 
     except Exception as e:
 
-        print("❌ CONFIDENCE ERROR:", repr(e))
+        print(
+            "❌ CONFIDENCE ERROR:",
+            repr(e)
+        )
 
-        confidence = 0.0
+        confidence = {
+            "level": "none",
+            "score": 0.0,
+            "note": "Confidence could not be calculated.",
+        }
 
-    print("CONFIDENCE:", confidence)
 
-    # --------------------------------------------------------
+    print(
+        "CONFIDENCE:",
+        confidence
+    )
+
+
+    # ========================================================
     # DEBUG RETRIEVED CHUNKS
-    # --------------------------------------------------------
+    # ========================================================
 
-    for i, chunk in enumerate(chunks, start=1):
+    for i, chunk in enumerate(
+        chunks,
+        start=1,
+    ):
 
-        print(f"\n--- CHUNK {i} ---")
+        print(
+            f"\n--- CHUNK {i} ---"
+        )
 
         print(
             "TITLE:",
-            chunk.get("title", "N/A")
+            chunk.get(
+                "title",
+                "N/A",
+            )
         )
 
         print(
             "REGIME:",
-            chunk.get("regime", "N/A")
+            chunk.get(
+                "regime",
+                "N/A",
+            )
         )
 
         print(
             "LANGUAGE:",
-            chunk.get("language", "N/A")
+            chunk.get(
+                "language",
+                "N/A",
+            )
         )
 
         print(
             "SCORE:",
-            chunk.get("score", "N/A")
+            chunk.get(
+                "score",
+                "N/A",
+            )
         )
 
         print(
             "TEXT:",
-            chunk.get("chunk_text", "")[:500]
+            chunk.get(
+                "chunk_text",
+                "",
+            )[:500]
         )
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # NO RETRIEVED CONTEXT
-    # --------------------------------------------------------
+    # ========================================================
 
     if not chunks:
 
@@ -159,13 +294,16 @@ def query(
             regime=request.regime,
             citations=[],
             confidence=confidence,
+            needs_clarification=False,
+            clarifying_questions=[],
         )
 
         return result
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # GENERATION
-    # --------------------------------------------------------
+    # ========================================================
 
     try:
 
@@ -177,36 +315,50 @@ def query(
 
     except Exception as e:
 
-        print("❌ GENERATION ERROR:", repr(e))
+        print(
+            "❌ GENERATION ERROR:",
+            repr(e)
+        )
 
         raise HTTPException(
             status_code=500,
             detail="Answer generation failed.",
         )
 
-    print("\nGENERATED ANSWER:")
+
+    print(
+        "\nGENERATED ANSWER:"
+    )
+
     print(answer)
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # RESPONSE
-    # --------------------------------------------------------
+    # ========================================================
 
     result = QueryResponse(
         answer=answer,
         regime=request.regime,
         citations=chunks,
         confidence=confidence,
+        needs_clarification=False,
+        clarifying_questions=[],
     )
 
-    # --------------------------------------------------------
-    # CACHE ONLY AFTER EVERYTHING WORKS
-    # --------------------------------------------------------
+
+    # ========================================================
+    # CACHE
+    # ========================================================
 
     if USE_CACHE:
 
         query_cache[cache_key] = result
 
-    print("========================================\n")
+
+    print(
+        "========================================\n"
+    )
 
     return result
 
@@ -224,20 +376,103 @@ def compare_query(
     current_user: User = Depends(get_current_user),
 ):
 
-    print("\n============== COMPARE QUERY ==============")
-    print("QUESTION:", request.question)
-    print("REGIMES:", request.regimes)
-    print("TOP K:", request.top_k)
+    print(
+        "\n============== COMPARE QUERY =============="
+    )
+
+    print(
+        "QUESTION:",
+        request.question
+    )
+
+    print(
+        "REGIMES:",
+        request.regimes
+    )
+
+    print(
+        "TOP K:",
+        request.top_k
+    )
+
+
+    # ========================================================
+    # AMBIGUITY CHECK
+    # ========================================================
+
+    try:
+
+        ambiguity_check = check_ambiguity(
+            request.question
+        )
+
+        print(
+            "AMBIGUITY CHECK:",
+            ambiguity_check
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ AMBIGUITY CHECK ERROR:",
+            repr(e)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Ambiguity check failed.",
+        )
+
+
+    # --------------------------------------------------------
+    # STOP IF QUESTION IS UNCLEAR
+    # --------------------------------------------------------
+
+    if not ambiguity_check.get(
+        "is_clear",
+        True,
+    ):
+
+        print(
+            "⚠️ COMPARE QUESTION REQUIRES CLARIFICATION"
+        )
+
+        # Depending on your CompareQueryResponse schema,
+        # this may need additional fields.
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Question requires clarification.",
+                "clarifying_questions":
+                    ambiguity_check.get(
+                        "clarifying_questions",
+                        [],
+                    ),
+            },
+        )
+
+
+    # ========================================================
+    # PER-REGIME ANSWERS
+    # ========================================================
 
     per_regime_answers = []
 
-    # --------------------------------------------------------
-    # PROCESS EACH JURISDICTION SEPARATELY
-    # --------------------------------------------------------
+
+    # ========================================================
+    # PROCESS EACH JURISDICTION
+    # ========================================================
 
     for regime in request.regimes:
 
-        print(f"\n========== REGIME: {regime} ==========")
+        print(
+            f"\n========== REGIME: {regime} =========="
+        )
+
+
+        # ----------------------------------------------------
+        # RETRIEVAL
+        # ----------------------------------------------------
 
         try:
 
@@ -256,9 +491,11 @@ def compare_query(
 
             chunks = []
 
+
         print(
             f"Retrieved {len(chunks)} chunks for {regime}"
         )
+
 
         # ----------------------------------------------------
         # CONFIDENCE
@@ -266,7 +503,9 @@ def compare_query(
 
         try:
 
-            confidence = compute_confidence(chunks)
+            confidence = compute_confidence(
+                chunks
+            )
 
         except Exception as e:
 
@@ -275,48 +514,78 @@ def compare_query(
                 repr(e)
             )
 
-            confidence = 0.0
+            confidence = {
+                "level": "none",
+                "score": 0.0,
+                "note": (
+                    "Confidence could not be calculated."
+                ),
+            }
+
 
         print(
-            f"Confidence for {regime}: {confidence}"
+            f"Confidence for {regime}:",
+            confidence
         )
 
+
         # ----------------------------------------------------
-        # DEBUG
+        # DEBUG CHUNKS
         # ----------------------------------------------------
 
-        for i, chunk in enumerate(chunks, start=1):
+        for i, chunk in enumerate(
+            chunks,
+            start=1,
+        ):
 
-            print(f"\n--- {regime} CHUNK {i} ---")
+            print(
+                f"\n--- {regime} CHUNK {i} ---"
+            )
 
             print(
                 "TITLE:",
-                chunk.get("title", "N/A")
+                chunk.get(
+                    "title",
+                    "N/A",
+                )
             )
 
             print(
                 "REGIME:",
-                chunk.get("regime", "N/A")
+                chunk.get(
+                    "regime",
+                    "N/A",
+                )
             )
 
             print(
                 "LANGUAGE:",
-                chunk.get("language", "N/A")
+                chunk.get(
+                    "language",
+                    "N/A",
+                )
             )
 
             print(
                 "SCORE:",
-                chunk.get("score", "N/A")
+                chunk.get(
+                    "score",
+                    "N/A",
+                )
             )
 
             print(
                 "TEXT:",
-                chunk.get("chunk_text", "")[:300]
+                chunk.get(
+                    "chunk_text",
+                    "",
+                )[:300]
             )
 
-        # ----------------------------------------------------
-        # GENERATE
-        # ----------------------------------------------------
+
+        # ====================================================
+        # GENERATION
+        # ====================================================
 
         if chunks:
 
@@ -346,9 +615,10 @@ def compare_query(
                 "enough information to answer this question."
             )
 
-        # ----------------------------------------------------
-        # STORE JURISDICTION RESULT
-        # ----------------------------------------------------
+
+        # ====================================================
+        # STORE RESULT
+        # ====================================================
 
         per_regime_answers.append(
             {
@@ -359,9 +629,10 @@ def compare_query(
             }
         )
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # CROSS-JURISDICTION SYNTHESIS
-    # --------------------------------------------------------
+    # ========================================================
 
     try:
 
@@ -372,14 +643,21 @@ def compare_query(
 
     except Exception as e:
 
-        print("❌ SYNTHESIS ERROR:", repr(e))
+        print(
+            "❌ SYNTHESIS ERROR:",
+            repr(e)
+        )
 
         synthesis = (
             "Synthesis could not be generated. "
             "Please review the individual jurisdiction answers."
         )
 
-    print("============================================\n")
+
+    print(
+        "============================================\n"
+    )
+
 
     return CompareQueryResponse(
         per_regime_answers=per_regime_answers,
