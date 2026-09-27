@@ -9,3 +9,4 @@ class ClassifyResponse(BaseModel):
     reasoning: str
     ip_posture: str
     clarifying_questions: list[str]
+    tkdl_reference: dict | None = None
