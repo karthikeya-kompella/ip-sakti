@@ -67,3 +67,24 @@ def retrieve_chunks(
     print("=====================================\n")
 
     return chunks
+
+
+
+def compute_confidence(chunks: list[dict]) -> dict:
+    """Derive a simple confidence label from the top retrieval score."""
+    if not chunks:
+        return {"level": "none", "score": 0.0, "note": "No relevant sources found."}
+
+    top_score = chunks[0].get("score") or 0.0
+
+    if top_score >= 0.75:
+        level = "high"
+        note = "Strong source match."
+    elif top_score >= 0.55:
+        level = "medium"
+        note = "Moderate source match — verify against the cited passage."
+    else:
+        level = "low"
+        note = "Weak source match — treat this answer with caution and consult a human IP facilitator."
+
+    return {"level": level, "score": round(top_score, 3), "note": note}
