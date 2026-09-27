@@ -70,7 +70,38 @@ def _has_foreign_script_leak(text: str, target_code: str) -> bool:
         if code != target_code and re.search(pattern, text):
             return True
     return False
+def check_ambiguity(question: str) -> dict:
+    """Before running full retrieval + generation, check if the question is
+    too vague to answer meaningfully. If so, return clarifying questions
+    instead of guessing."""
+    prompt = f"""You are a regulatory/IP assistant intake step. A user has asked the following question about an Ayurveda product's IP or regulatory status:
 
+"{question}"
+
+Decide if this question has ENOUGH detail to answer meaningfully, or if it is too vague.
+A vague question is missing things like: what the formulation/ingredients are, what form it is (tablet, oil, powder), what claim or use it makes, or what specifically the user wants to know (patent? approval? classification?).
+
+Respond in EXACTLY this format:
+CLEAR: <yes or no>
+QUESTIONS: <if CLEAR is no, list up to 3 short clarifying questions separated by " | " that would help. If CLEAR is yes, write "None">
+"""
+
+    raw = _call_llm(prompt, max_tokens=300)
+    raw = _extract_final_answer(raw)
+
+    is_clear = True
+    questions = []
+
+    for line in raw.splitlines():
+        line = line.strip()
+        if line.upper().startswith("CLEAR:"):
+            is_clear = "yes" in line.lower()
+        elif line.upper().startswith("QUESTIONS:"):
+            q_text = line.split(":", 1)[1].strip()
+            if q_text.lower() != "none":
+                questions = [q.strip() for q in q_text.split("|") if q.strip()]
+
+    return {"is_clear": is_clear, "clarifying_questions": questions}
 
 def generate_answer(
     question: str,
